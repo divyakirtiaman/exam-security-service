@@ -26,16 +26,24 @@ import {
 
 import { redisClient } from "../config/redis.js";
 
-import { evaluateViolation } from "../policies/policy-engine.js";
+import {
+  evaluateViolation
+} from "../policies/policy-engine.js";
 
 import AppError from "../utils/errors.js";
 
+import validateSecurityEvent
+  from "../validators/security-event.validator.js";
 
-// Process heartbeat
-const processHeartbeat = async (sessionId) => {
+
+const processHeartbeat = async (
+  sessionId
+) => {
 
   const session =
-    await findBySessionId(sessionId);
+    await findBySessionId(
+      sessionId
+    );
 
   if (!session) {
     throw new AppError(
@@ -45,13 +53,16 @@ const processHeartbeat = async (sessionId) => {
     );
   }
 
-  if (session.status === "TERMINATED") {
-    throw new AppError(
-      "Security session is already terminated",
-      409,
-      "SESSION_TERMINATED"
-    );
-  }
+ if (
+  session.status === "TERMINATED" ||
+  session.status === "LOCKED"
+) {
+  throw new AppError(
+    `Security session is already ${session.status.toLowerCase()}`,
+    409,
+    "SESSION_CLOSED"
+  );
+}
 
   const redisKey =
     `security:session:${sessionId}`;
@@ -62,25 +73,29 @@ const processHeartbeat = async (sessionId) => {
   await redisClient.hSet(
     redisKey,
     {
-      lastHeartbeat: heartbeatTime
+      lastHeartbeat:
+        heartbeatTime
     }
   );
 
   return {
     sessionId,
-    status: session.status,
-    lastHeartbeat: heartbeatTime
+    status:
+      session.status,
+    lastHeartbeat:
+      heartbeatTime
   };
 };
 
 
-// Terminate security session
 const terminateSecuritySession = async (
   sessionId
 ) => {
 
   const session =
-    await findBySessionId(sessionId);
+    await findBySessionId(
+      sessionId
+    );
 
   if (!session) {
     throw new AppError(
@@ -90,7 +105,9 @@ const terminateSecuritySession = async (
     );
   }
 
-  if (session.status === "TERMINATED") {
+  if (
+    session.status === "TERMINATED"
+  ) {
     throw new AppError(
       "Security session is already terminated",
       409,
@@ -116,7 +133,8 @@ const terminateSecuritySession = async (
     {
       status: "TERMINATED",
       graceExpiresAt: "",
-      endedAt: endedAt.toISOString()
+      endedAt:
+        endedAt.toISOString()
     }
   );
 
@@ -133,7 +151,6 @@ const terminateSecuritySession = async (
 };
 
 
-// Create security session
 const createSecuritySession = async ({
   attemptId,
   candidateId,
@@ -216,7 +233,6 @@ const createSecuritySession = async ({
 };
 
 
-// Get security session
 const getSecuritySession = async (
   sessionId
 ) => {
@@ -280,7 +296,6 @@ const getSecuritySession = async (
 };
 
 
-// Process security event
 const processSecurityEvent = async ({
   sessionId,
   eventId,
@@ -289,6 +304,14 @@ const processSecurityEvent = async ({
   occurredAt,
   metadata
 }) => {
+
+  validateSecurityEvent({
+    eventId,
+    eventType,
+    clientType,
+    occurredAt,
+    metadata
+  });
 
   const session =
     await findBySessionId(
@@ -304,14 +327,15 @@ const processSecurityEvent = async ({
   }
 
   if (
-    session.status === "TERMINATED"
-  ) {
-    throw new AppError(
-      "Security session is already terminated",
-      409,
-      "SESSION_TERMINATED"
-    );
-  }
+  session.status === "TERMINATED" ||
+  session.status === "LOCKED"
+) {
+  throw new AppError(
+    `Security session is already ${session.status.toLowerCase()}`,
+    409,
+    "SESSION_CLOSED"
+  );
+}
 
   const existingEvent =
     await findEventById(
@@ -621,7 +645,6 @@ const processSecurityEvent = async ({
 };
 
 
-// Get security session history
 const getSecuritySessionHistory = async (
   sessionId
 ) => {
@@ -723,7 +746,6 @@ const getSecuritySessionHistory = async (
 };
 
 
-// Check grace period expiry
 const checkGracePeriodExpiry = async (
   sessionId
 ) => {
@@ -794,7 +816,6 @@ const checkGracePeriodExpiry = async (
     redisKey,
     {
       status: "LOCKED",
-
       graceExpiresAt: ""
     }
   );
@@ -814,21 +835,12 @@ const checkGracePeriodExpiry = async (
 };
 
 
-// Export services
 export {
-
   createSecuritySession,
-
   getSecuritySession,
-
   processSecurityEvent,
-
   getSecuritySessionHistory,
-
   processHeartbeat,
-
   terminateSecuritySession,
-
   checkGracePeriodExpiry
-
 };
